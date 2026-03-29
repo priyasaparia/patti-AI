@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Patti AI — Plant Disease Detection</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+<style>
+/* ── Variables ─────────────────────────────────────────────── */
+:root {
+  --cream:       #F5F0E8;
+  --cream-dark:  #EDE5D0;
+  --cream-deep:  #E2D9C0;
+  --green:       #2D6A4F;
+  --green-mid:   #40916C;
+  --green-light: #74C69D;
+  --green-pale:  #D8F3DC;
+  --brown:       #8B5E3C;
+  --text:        #1A2E22;
+  --text-muted:  #6B7C6E;
+  --white:       #FFFFFF;
+  --shadow:      0 4px 24px rgba(45,106,79,0.10);
+  --shadow-lg:   0 12px 48px rgba(45,106,79,0.18);
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:'DM Sans',sans-serif;
+  background:var(--cream);
+  color:var(--text);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+button{cursor:pointer;font-family:inherit}
+input{font-family:inherit}
+
+/* ── Leaf bg decoration ────────────────────────────────────── */
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background:
+    radial-gradient(ellipse 60% 50% at 90% 10%, rgba(116,198,157,0.13) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 5% 90%, rgba(45,106,79,0.08) 0%, transparent 55%);
+  pointer-events:none;z-index:0;
+}
+
+/* ── Navbar ────────────────────────────────────────────────── */
+nav{
+  position:sticky;top:0;z-index:100;
+  background:rgba(245,240,232,0.92);
+  backdrop-filter:blur(12px);
+  border-bottom:1.5px solid var(--cream-deep);
+  padding:0 2rem;
+  height:64px;
+  display:flex;align-items:center;justify-content:space-between;
+}
+.nav-logo{
+  font-family:'Playfair Display',serif;
+  font-size:1.6rem;font-weight:900;
+  color:var(--green);
+  letter-spacing:-0.5px;
+  display:flex;align-items:center;gap:.4rem;
+}
+.nav-logo span{color:var(--green-mid)}
+.leaf-icon{font-size:1.4rem}
+.nav-right{display:flex;align-items:center;gap:1rem}
+.nav-user{
+  font-size:.875rem;font-weight:500;
+  color:var(--text-muted);
+}
+.btn-logout{
+  background:none;border:1.5px solid var(--green-mid);
+  color:var(--green);padding:.35rem .9rem;border-radius:99px;
+  font-size:.8rem;font-weight:600;letter-spacing:.3px;
+  transition:all .2s;
+}
+.btn-logout:hover{background:var(--green);color:var(--white)}
+
+/* ── Pages ─────────────────────────────────────────────────── */
+.page{display:none;min-height:calc(100vh - 64px);position:relative;z-index:1}
+.page.active{display:block}
+
+/* ── Auth page ─────────────────────────────────────────────── */
+#auth-page{
+  display:none;
+  align-items:center;justify-content:center;
+  min-height:100vh;
+}
+#auth-page.active{display:flex}
+.auth-card{
+  background:var(--white);
+  border-radius:24px;
+  padding:2.5rem 2.8rem;
+  width:100%;max-width:420px;
+  box-shadow:var(--shadow-lg);
+  border:1px solid var(--cream-deep);
+  animation:slideUp .4s ease;
+}
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+
+.auth-logo{
+  font-family:'Playfair Display',serif;
+  font-size:2rem;font-weight:900;
+  color:var(--green);
+  text-align:center;margin-bottom:.2rem;
+}
+.auth-sub{text-align:center;color:var(--text-muted);font-size:.875rem;margin-bottom:2rem}
+.form-group{margin-bottom:1.1rem}
+.form-group label{
+  display:block;font-size:.8rem;font-weight:600;
+  color:var(--green);letter-spacing:.4px;margin-bottom:.4rem;text-transform:uppercase;
+}
+.form-group input{
+  width:100%;padding:.7rem 1rem;
+  border:1.5px solid var(--cream-deep);
+  border-radius:10px;font-size:.9rem;
+  background:var(--cream);color:var(--text);
+  transition:border .2s,box-shadow .2s;outline:none;
+}
+.form-group input:focus{
+  border-color:var(--green-mid);
+  box-shadow:0 0 0 3px rgba(64,145,108,0.12);
+}
+.btn-primary{
+  width:100%;padding:.8rem;
+  background:var(--green);color:var(--white);
+  border:none;border-radius:12px;
+  font-size:.95rem;font-weight:600;letter-spacing:.3px;
+  transition:all .2s;margin-top:.5rem;
+}
+.btn-primary:hover{background:var(--green-mid);transform:translateY(-1px);box-shadow:var(--shadow)}
+.auth-switch{
+  text-align:center;margin-top:1.2rem;
+  font-size:.85rem;color:var(--text-muted);
+}
+.auth-switch a{color:var(--green);font-weight:600;cursor:pointer;text-decoration:none}
+.auth-switch a:hover{text-decoration:underline}
+.auth-error{
+  background:#fff0f0;border:1px solid #ffcccc;
+  color:#c0392b;padding:.6rem .9rem;border-radius:8px;
+  font-size:.82rem;margin-bottom:.8rem;display:none;
+}
+
+/* ── Main app ──────────────────────────────────────────────── */
+#main-page{
+  padding:2rem;
+  max-width:1200px;
+  margin:0 auto;
+}
+.page-title{
+  font-family:'Playfair Display',serif;
+  font-size:2rem;font-weight:700;
+  color:var(--green);margin-bottom:.3rem;
+}
+.page-subtitle{color:var(--text-muted);font-size:.9rem;margin-bottom:2rem}
+
+.main-grid{
+  display:grid;
+  grid-template-columns:1fr 340px;
+  gap:1.5rem;
+}
+@media(max-width:900px){.main-grid{grid-template-columns:1fr}}
+
+/* ── Upload card ───────────────────────────────────────────── */
+.card{
+  background:var(--white);
+  border-radius:20px;
+  padding:1.8rem;
+  box-shadow:var(--shadow);
+  border:1px solid var(--cream-deep);
+}
+.card-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.15rem;font-weight:700;
+  color:var(--green);margin-bottom:1.2rem;
+  display:flex;align-items:center;gap:.5rem;
+}
+
+/* Drop zone */
+.drop-zone{
+  border:2px dashed var(--green-light);
+  border-radius:16px;
+  padding:2.5rem 1.5rem;
+  text-align:center;
+  background:var(--green-pale);
+  cursor:pointer;
+  transition:all .25s;
+  position:relative;
+}
+.drop-zone:hover,.drop-zone.drag-over{
+  border-color:var(--green-mid);
+  background:rgba(116,198,157,0.2);
+}
+.drop-icon{font-size:2.8rem;margin-bottom:.6rem}
+.drop-text{font-size:.9rem;color:var(--text-muted);line-height:1.5}
+.drop-text strong{color:var(--green);display:block;font-size:1rem;margin-bottom:.2rem}
+#file-input{position:absolute;inset:0;opacity:0;cursor:pointer}
+
+/* Preview */
+#preview-wrap{display:none;margin-top:1.2rem;text-align:center}
+#preview-img{
+  max-height:260px;border-radius:14px;
+  border:2px solid var(--cream-deep);
+  box-shadow:var(--shadow);
+  max-width:100%;
+}
+.preview-name{font-size:.8rem;color:var(--text-muted);margin-top:.5rem}
+
+/* Camera */
+.btn-row{display:flex;gap:.8rem;margin-top:1.2rem;flex-wrap:wrap}
+.btn-secondary{
+  flex:1;padding:.7rem 1rem;
+  background:var(--cream);border:1.5px solid var(--cream-deep);
+  color:var(--green);border-radius:10px;
+  font-size:.875rem;font-weight:600;
+  transition:all .2s;display:flex;align-items:center;justify-content:center;gap:.4rem;
+}
+.btn-secondary:hover{border-color:var(--green-mid);background:var(--green-pale)}
+.btn-analyze{
+  width:100%;margin-top:1rem;padding:.85rem;
+  background:linear-gradient(135deg,var(--green),var(--green-mid));
+  color:var(--white);border:none;border-radius:12px;
+  font-size:1rem;font-weight:700;letter-spacing:.4px;
+  transition:all .25s;display:flex;align-items:center;justify-content:center;gap:.5rem;
+}
+.btn-analyze:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(45,106,79,0.3)}
+.btn-analyze:disabled{opacity:.6;transform:none;cursor:not-allowed}
+
+/* Camera modal */
+.modal-overlay{
+  display:none;position:fixed;inset:0;
+  background:rgba(0,0,0,0.6);backdrop-filter:blur(4px);
+  z-index:999;align-items:center;justify-content:center;
+}
+.modal-overlay.open{display:flex}
+.modal{
+  background:var(--white);border-radius:20px;
+  padding:1.5rem;max-width:520px;width:90%;
+  box-shadow:var(--shadow-lg);
+}
+.modal-title{
+  font-family:'Playfair Display',serif;
+  font-size:1.2rem;font-weight:700;color:var(--green);
+  margin-bottom:1rem;
+}
+#cam-video{width:100%;border-radius:12px;background:#000}
+.modal-btns{display:flex;gap:.8rem;margin-top:1rem}
+.btn-capture{
+  flex:1;padding:.75rem;background:var(--green);color:var(--white);
+  border:none;border-radius:10px;font-weight:700;font-size:.9rem;
+  transition:all .2s;
+}
+.btn-capture:hover{background:var(--green-mid)}
+.btn-cancel{
+  flex:1;padding:.75rem;background:var(--cream);color:var(--text);
+  border:1.5px solid var(--cream-deep);border-radius:10px;font-weight:600;font-size:.9rem;
+}
+
+/* ── Result card ───────────────────────────────────────────── */
+#result-card{display:none}
+.result-badge{
+  display:inline-flex;align-items:center;gap:.5rem;
+  padding:.5rem 1.1rem;border-radius:99px;
+  font-weight:700;font-size:.9rem;margin-bottom:1rem;
+}
+.result-badge.healthy{background:#d8f3dc;color:#1b4332}
+.result-badge.diseased{background:#ffe8d6;color:#7f4f24}
+
+.result-disease{
+  font-family:'Playfair Display',serif;
+  font-size:1.4rem;font-weight:700;
+  color:var(--text);margin-bottom:.3rem;
+  line-height:1.3;
+}
+.result-confidence{color:var(--text-muted);font-size:.875rem;margin-bottom:1.2rem}
+
+.confidence-bar{
+  height:8px;background:var(--cream-deep);border-radius:99px;overflow:hidden;
+  margin-top:.4rem;
+}
+.confidence-fill{
+  height:100%;border-radius:99px;
+  background:linear-gradient(90deg,var(--green-mid),var(--green-light));
+  transition:width 1s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── History sidebar ───────────────────────────────────────── */
+.history-list{display:flex;flex-direction:column;gap:.8rem;max-height:580px;overflow-y:auto}
+.history-list::-webkit-scrollbar{width:4px}
+.history-list::-webkit-scrollbar-thumb{background:var(--cream-deep);border-radius:99px}
+
+.history-item{
+  display:flex;gap:.8rem;align-items:flex-start;
+  padding:.85rem;background:var(--cream);
+  border-radius:12px;border:1px solid var(--cream-deep);
+  cursor:pointer;transition:all .2s;
+}
+.history-item:hover{border-color:var(--green-light);background:var(--green-pale)}
+.history-thumb{
+  width:52px;height:52px;border-radius:8px;
+  object-fit:cover;flex-shrink:0;
+  border:1px solid var(--cream-deep);
+}
+.history-thumb-placeholder{
+  width:52px;height:52px;border-radius:8px;
+  background:var(--cream-deep);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.3rem;
+}
+.history-info{flex:1;min-width:0}
+.history-disease{
+  font-weight:600;font-size:.82rem;color:var(--text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.history-conf{font-size:.75rem;color:var(--text-muted)}
+.history-date{font-size:.7rem;color:var(--text-muted);margin-top:.2rem}
+.history-dot{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:.35rem;
+}
+.history-dot.healthy{background:var(--green-mid)}
+.history-dot.diseased{background:#e07a5f}
+
+.empty-history{
+  text-align:center;padding:2rem 1rem;
+  color:var(--text-muted);font-size:.875rem;
+}
+.empty-icon{font-size:2rem;margin-bottom:.5rem}
+
+/* ── Loading spinner ───────────────────────────────────────── */
+.spinner{
+  width:36px;height:36px;
+  border:3px solid var(--cream-deep);
+  border-top-color:var(--green);
+  border-radius:50%;
+  animation:spin .7s linear infinite;
+  margin:0 auto;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-wrap{text-align:center;padding:1.5rem;display:none}
+.loading-text{font-size:.85rem;color:var(--text-muted);margin-top:.7rem}
+
+/* ── Toast ─────────────────────────────────────────────────── */
+.toast{
+  position:fixed;bottom:1.5rem;right:1.5rem;
+  background:var(--green);color:var(--white);
+  padding:.75rem 1.3rem;border-radius:12px;
+  font-size:.875rem;font-weight:600;
+  box-shadow:var(--shadow-lg);
+  transform:translateY(80px);opacity:0;
+  transition:all .3s;z-index:9999;
+}
+.toast.show{transform:translateY(0);opacity:1}
+</style>
+</head>
+<body>
+
+<!-- ── Navbar ─────────────────────────────────────────────── -->
+<nav id="navbar" style="display:none">
+  <div class="nav-logo">
+    <span class="leaf-icon">🌿</span>Patti <span>AI</span>
+  </div>
+  <div class="nav-right">
+    <span class="nav-user" id="nav-username"></span>
+    <button class="btn-logout" onclick="logout()">Logout</button>
+  </div>
+</nav>
+
+<!-- ── Auth page ──────────────────────────────────────────── -->
+<div id="auth-page" class="page">
+
+  <!-- LOGIN -->
+  <div class="auth-card" id="login-card">
+    <div class="auth-logo">🌿 Patti AI</div>
+    <p class="auth-sub">Detect plant diseases instantly with AI</p>
+    <div class="auth-error" id="login-error"></div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="login-email" placeholder="you@email.com"/>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="login-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+    </div>
+    <button class="btn-primary" onclick="doLogin()">Sign In</button>
+    <p class="auth-switch">No account? <a onclick="toggleAuth()">Create one</a></p>
+  </div>
+
+  <!-- SIGNUP -->
+  <div class="auth-card" id="signup-card" style="display:none">
+    <div class="auth-logo">🌿 Patti AI</div>
+    <p class="auth-sub">Join and start diagnosing your plants</p>
+    <div class="auth-error" id="signup-error"></div>
+    <div class="form-group">
+      <label>Full Name</label>
+      <input type="text" id="signup-name" placeholder="Your name"/>
+    </div>
+    <div class="form-group">
+      <label>Email</label>
+      <input type="email" id="signup-email" placeholder="you@email.com"/>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="signup-pass" placeholder="Min 6 characters" onkeydown="if(event.key==='Enter')doSignup()"/>
+    </div>
+    <button class="btn-primary" onclick="doSignup()">Create Account</button>
+    <p class="auth-switch">Already have an account? <a onclick="toggleAuth()">Sign in</a></p>
+  </div>
+</div>
+
+<!-- ── Main app ────────────────────────────────────────────── -->
+<div id="main-page" class="page">
+  <div class="page-title">Plant Disease Detector</div>
+  <p class="page-subtitle">Upload a leaf photo or use your camera — Patti AI will diagnose it instantly.</p>
+
+  <div class="main-grid">
+
+    <!-- Left column -->
+    <div>
+      <!-- Upload card -->
+      <div class="card" style="margin-bottom:1.5rem">
+        <div class="card-title">🖼️ Upload or Capture Leaf</div>
+
+        <!-- Drop zone -->
+        <div class="drop-zone" id="drop-zone">
+          <input type="file" id="file-input" accept="image/*" onchange="handleFile(event)"/>
+          <div class="drop-icon">🍃</div>
+          <div class="drop-text">
+            <strong>Drop your leaf image here</strong>
+            or click to browse files
+          </div>
+        </div>
+
+        <!-- Preview -->
+        <div id="preview-wrap">
+          <img id="preview-img" src="" alt="Preview"/>
+          <div class="preview-name" id="preview-name"></div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="btn-row">
+          <button class="btn-secondary" onclick="openCamera()">📷 Use Camera</button>
+          <button class="btn-secondary" onclick="clearImage()">🗑️ Clear</button>
+        </div>
+        <button class="btn-analyze" id="analyze-btn" onclick="analyzeImage()" disabled>
+          🔬 Analyze Leaf
+        </button>
+      </div>
+
+      <!-- Result card -->
+      <div class="card" id="result-card">
+        <div class="card-title">🧬 Diagnosis Result</div>
+        <div id="loading-wrap" class="loading-wrap">
+          <div class="spinner"></div>
+          <div class="loading-text">Analyzing your leaf...</div>
+        </div>
+        <div id="result-content"></div>
+      </div>
+    </div>
+
+    <!-- Right column: History -->
+    <div class="card" style="align-self:start">
+      <div class="card-title">🕓 Previous Searches</div>
+      <div class="history-list" id="history-list">
+        <div class="empty-history">
+          <div class="empty-icon">🌱</div>
+          No searches yet.<br>Upload a leaf to get started!
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Camera modal ────────────────────────────────────────── -->
+<div class="modal-overlay" id="cam-modal">
+  <div class="modal">
+    <div class="modal-title">📷 Capture Leaf Photo</div>
+    <video id="cam-video" autoplay playsinline></video>
+    <canvas id="cam-canvas" style="display:none"></canvas>
+    <div class="modal-btns">
+      <button class="btn-capture" onclick="capturePhoto()">📸 Capture</button>
+      <button class="btn-cancel" onclick="closeCamera()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ───────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<script>
+const API = '/api';   // ← relative path — cookies work correctly now
+let currentImageB64 = null;
+let camStream = null;
+
+// ── Helpers ────────────────────────────────────────────────
+function showToast(msg, duration=2800) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(name + '-page').classList.add('active');
+  document.getElementById('navbar').style.display = name === 'main' ? 'flex' : 'none';
+}
+
+// ── Auth ───────────────────────────────────────────────────
+function toggleAuth() {
+  const l = document.getElementById('login-card');
+  const s = document.getElementById('signup-card');
+  l.style.display = l.style.display === 'none' ? 'block' : 'none';
+  s.style.display = s.style.display === 'none' ? 'block' : 'none';
+}
+
+async function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-pass').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  if (!email || !password) { errEl.textContent = 'Please fill all fields.'; errEl.style.display = 'block'; return; }
+  try {
+    const r = await fetch(API + '/login', {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email, password})
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error; errEl.style.display = 'block'; return; }
+    document.getElementById('nav-username').textContent = d.name;
+    showPage('main');
+    loadHistory();
+    showToast('Welcome back, ' + d.name + '! 🌿');
+  } catch(e) { errEl.textContent = 'Connection error.'; errEl.style.display = 'block'; }
+}
+
+async function doSignup() {
+  const name = document.getElementById('signup-name').value.trim();
+  const email = document.getElementById('signup-email').value.trim();
+  const password = document.getElementById('signup-pass').value;
+  const errEl = document.getElementById('signup-error');
+  errEl.style.display = 'none';
+  if (!name || !email || !password) { errEl.textContent = 'Please fill all fields.'; errEl.style.display = 'block'; return; }
+  if (password.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.style.display = 'block'; return; }
+  try {
+    const r = await fetch(API + '/signup', {
+      method:'POST', credentials:'include',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name, email, password})
+    });
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error; errEl.style.display = 'block'; return; }
+    showToast('Account created! Please sign in. 🌱');
+    toggleAuth();
+  } catch(e) { errEl.textContent = 'Connection error.'; errEl.style.display = 'block'; }
+}
+
+async function logout() {
+  await fetch(API + '/logout', { method:'POST', credentials:'include' });
+  clearImage();
+  document.getElementById('history-list').innerHTML = `
+    <div class="empty-history"><div class="empty-icon">🌱</div>No searches yet.<br>Upload a leaf to get started!</div>`;
+  document.getElementById('result-card').style.display = 'none';
+  showPage('auth');
+  showToast('Signed out. See you soon! 👋');
+}
+
+// ── Check session on load ──────────────────────────────────
+async function checkSession() {
+  try {
+    const r = await fetch(API + '/me', { credentials:'include' });
+    if (r.ok) {
+      const d = await r.json();
+      document.getElementById('nav-username').textContent = d.name;
+      showPage('main');
+      loadHistory();
+    } else {
+      showPage('auth');
+    }
+  } catch { showPage('auth'); }
+}
+
+// ── Image handling ─────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) loadImageFile(file);
+});
+
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) loadImageFile(file);
+}
+
+function loadImageFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    currentImageB64 = ev.target.result;
+    showPreview(ev.target.result, file.name);
+  };
+  reader.readAsDataURL(file);
+}
+
+function showPreview(src, name) {
+  document.getElementById('preview-img').src = src;
+  document.getElementById('preview-name').textContent = name || '';
+  document.getElementById('preview-wrap').style.display = 'block';
+  document.getElementById('analyze-btn').disabled = false;
+}
+
+function clearImage() {
+  currentImageB64 = null;
+  document.getElementById('preview-wrap').style.display = 'none';
+  document.getElementById('preview-img').src = '';
+  document.getElementById('file-input').value = '';
+  document.getElementById('analyze-btn').disabled = true;
+}
+
+// ── Camera ─────────────────────────────────────────────────
+async function openCamera() {
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    document.getElementById('cam-video').srcObject = camStream;
+    document.getElementById('cam-modal').classList.add('open');
+  } catch(e) {
+    showToast('Camera access denied or unavailable.');
+  }
+}
+
+function capturePhoto() {
+  const video = document.getElementById('cam-video');
+  const canvas = document.getElementById('cam-canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  currentImageB64 = dataUrl;
+  showPreview(dataUrl, 'Camera capture');
+  closeCamera();
+}
+
+function closeCamera() {
+  if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+  document.getElementById('cam-modal').classList.remove('open');
+}
+
+// ── Analyze ────────────────────────────────────────────────
+async function analyzeImage() {
+  if (!currentImageB64) return;
+  const btn = document.getElementById('analyze-btn');
+  const resultCard = document.getElementById('result-card');
+  const loadWrap = document.getElementById('loading-wrap');
+  const resultContent = document.getElementById('result-content');
+
+  btn.disabled = true;
+  resultCard.style.display = 'block';
+  loadWrap.style.display = 'block';
+  resultContent.innerHTML = '';
+
+  try {
+    const r = await fetch(API + '/predict', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_b64: currentImageB64 })
+    });
+    const d = await r.json();
+    loadWrap.style.display = 'none';
+    if (!r.ok) { resultContent.innerHTML = `<p style="color:#c0392b">${d.error}</p>`; return; }
+    renderResult(d);
+    loadHistory();
+    showToast('Analysis complete! 🔬');
+  } catch(e) {
+    loadWrap.style.display = 'none';
+    resultContent.innerHTML = `<p style="color:#c0392b">Connection error. Is the server running?</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderResult(d) {
+  const isHealthy = d.healthy;
+  const conf = d.confidence || 0;
+  document.getElementById('result-content').innerHTML = `
+    <div class="result-badge ${isHealthy ? 'healthy' : 'diseased'}">
+      ${isHealthy ? '✅ Healthy' : '⚠️ Disease Detected'}
+    </div>
+    <div class="result-disease">${formatLabel(d.disease)}</div>
+    <div class="result-confidence">Confidence: <strong>${conf}%</strong></div>
+    <div class="confidence-bar">
+      <div class="confidence-fill" id="conf-fill" style="width:0%"></div>
+    </div>
+  `;
+  setTimeout(() => {
+    document.getElementById('conf-fill').style.width = conf + '%';
+  }, 50);
+}
+
+function formatLabel(label) {
+  return label.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ── History ────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const r = await fetch(API + '/history', { credentials: 'include' });
+    if (!r.ok) return;
+    const items = await r.json();
+    renderHistory(items);
+  } catch {}
+}
+
+function renderHistory(items) {
+  const el = document.getElementById('history-list');
+  if (!items.length) {
+    el.innerHTML = `<div class="empty-history"><div class="empty-icon">🌱</div>No searches yet.<br>Upload a leaf to get started!</div>`;
+    return;
+  }
+  el.innerHTML = items.map(item => {
+    const res = item.result || {};
+    const healthy = res.healthy;
+    const date = new Date(item.timestamp).toLocaleDateString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+    const thumb = item.image_full
+      ? `<img class="history-thumb" src="data:image/jpeg;base64,${item.image_full}" alt="thumb"/>`
+      : `<div class="history-thumb-placeholder">🍃</div>`;
+    return `
+      <div class="history-item" onclick="showHistoryResult(${JSON.stringify(res).replace(/"/g,'&quot;')})">
+        ${thumb}
+        <div class="history-info">
+          <div class="history-disease">${formatLabel(res.disease || 'Unknown')}</div>
+          <div class="history-conf">${res.confidence || 0}% confidence</div>
+          <div class="history-date">${date}</div>
+        </div>
+        <div class="history-dot ${healthy ? 'healthy' : 'diseased'}"></div>
+      </div>`;
+  }).join('');
+}
+
+function showHistoryResult(res) {
+  const resultCard = document.getElementById('result-card');
+  document.getElementById('loading-wrap').style.display = 'none';
+  resultCard.style.display = 'block';
+  renderResult(res);
+  resultCard.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ── Init ───────────────────────────────────────────────────
+checkSession();
+</script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+from flask import Flask, request, jsonify, send_from_directory, session
+from flask_cors import CORS
+from pymongo import MongoClient
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+from datetime import timedelta
+import os, uuid, base64, datetime, json
+import numpy as np
+from flask_session import Session
+
+from PIL import Image
+
+app = Flask(__name__, static_folder='static')
+app.secret_key = 'pattiAI_super_secret_key_2024_xyz'
+app.config['SESSION_TYPE'] = 'filesystem'
+app.config['SESSION_COOKIE_NAME'] = 'patti_session'
+app.config['SESSION_COOKIE_PATH'] = '/'
+app.config['SESSION_COOKIE_DOMAIN'] = None
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=7)
+
+CORS(app, 
+     supports_credentials=True, 
+     origins=["http://localhost:5000", "http://127.0.0.1:5000"],
+     allow_headers=["Content-Type"],
+     methods=["GET", "POST", "OPTIONS"])
+
+# ── MongoDB ───────────────────────────────────────────────────────────────────
+try:
+    client = MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
+    client.server_info()
+    db = client['patti_ai']
+    users_col = db['users']
+    searches_col = db['searches']
+    print("✅ MongoDB connected")
+except Exception as e:
+    print(f"⚠️  MongoDB error: {e}")
+    client = None
+    db = None
+    users_col = None
+    searches_col = None
+
+# ── Upload folder ─────────────────────────────────────────────────────────────
+UPLOAD_FOLDER = 'uploads'
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
+# ── Model ─────────────────────────────────────────────────────────────────────
+model = None
+class_names = {}
+
+def load_model():
+    global model, class_names
+    if model is not None:
+        return
+    try:
+        import tensorflow as tf
+
+        # Auto-detect model file
+        possible = [
+            'plant_disease_efficientnetv2s.keras',
+            'plant_disease_resnet50.keras',
+            'plant_disease_resnet5.keras',
+        ]
+        # Also scan folder
+        for f in os.listdir('.'):
+            if f.endswith('.keras') and f not in possible:
+                possible.append(f)
+
+        MODEL_PATH = None
+        for p in possible:
+            if os.path.exists(p):
+                MODEL_PATH = p
+                break
+
+        if not MODEL_PATH:
+            print(f"⚠️  No .keras model file found in folder!")
+            return
+
+        CLASS_PATH = 'class_indices.json'
+        if not os.path.exists(CLASS_PATH):
+            print(f"⚠️  class_indices.json not found!")
+            return
+
+        print(f"⏳ Loading model: {MODEL_PATH} ...")
+        model = tf.keras.models.load_model(MODEL_PATH)
+        print(f"✅ Model loaded → {MODEL_PATH}")
+
+        with open(CLASS_PATH) as f:
+            class_to_idx = json.load(f)
+        class_names = {v: k for k, v in class_to_idx.items()}
+        print(f"✅ Classes loaded → {len(class_names)} classes")
+
+    except Exception as e:
+        print(f"⚠️  Model load failed: {e}")
+
+
+def predict_image(img_path):
+    load_model()
+    if model is None:
+        return {"disease": "Model not loaded", "confidence": 0, "healthy": False}
+    try:
+        img = Image.open(img_path).convert('RGB').resize((224, 224))
+        arr = np.array(img, dtype=np.float32) / 255.0
+        arr = np.expand_dims(arr, 0)
+        preds = model.predict(arr, verbose=0)[0]
+        idx = int(np.argmax(preds))
+        conf = float(preds[idx])
+        label = class_names.get(idx, f"Class_{idx}")
+        healthy = 'healthy' in label.lower()
+        return {
+            "disease": label,
+            "confidence": round(conf * 100, 2),
+            "healthy": healthy
+        }
+    except Exception as e:
+        return {"disease": str(e), "confidence": 0, "healthy": False}
+
+
+# ── Auth ──────────────────────────────────────────────────────────────────────
+@app.route('/api/signup', methods=['POST'])
+def signup():
+    if users_col is None:
+        return jsonify({'error': 'Database not connected'}), 500
+    d = request.get_json()
+    if not d or not d.get('email') or not d.get('password') or not d.get('name'):
+        return jsonify({'error': 'All fields required'}), 400
+    if users_col.find_one({'email': d['email']}):
+        return jsonify({'error': 'Email already registered'}), 400
+    users_col.insert_one({
+        'name': d['name'],
+        'email': d['email'],
+        'password': generate_password_hash(d['password']),
+        'created_at': datetime.datetime.utcnow()
+    })
+    return jsonify({'message': 'Account created!'})
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    if users_col is None:
+        return jsonify({'error': 'Database not connected'}), 500
+    d = request.get_json()
+    if not d or not d.get('email') or not d.get('password'):
+        return jsonify({'error': 'All fields required'}), 400
+    user = users_col.find_one({'email': d['email']})
+    if not user or not check_password_hash(user['password'], d['password']):
+        return jsonify({'error': 'Invalid credentials'}), 401
+    session.permanent = True
+    session['user_id'] = str(user['_id'])
+    session['user_name'] = user['name']
+    session['user_email'] = user['email']
+    print(f"✅ Login: {user['email']} | session: {dict(session)}")
+    return jsonify({'name': user['name'], 'email': user['email']})
+
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    session.clear()
+    return jsonify({'message': 'Logged out'})
+
+
+@app.route('/api/me', methods=['GET'])
+def me():
+    print(f"🔍 /api/me called | session: {dict(session)}")
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    return jsonify({'name': session['user_name'], 'email': session['user_email']})
+
+
+# ── Predict ───────────────────────────────────────────────────────────────────
+@app.route('/api/predict', methods=['POST'])
+def predict():
+    print(f"🔍 /api/predict | session: {dict(session)}")
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    try:
+        img_data = None
+        fname = ''
+        path = ''
+
+        if 'file' in request.files:
+            f = request.files['file']
+            filename = secure_filename(f.filename)
+            ext = filename.rsplit('.', 1)[-1] if '.' in filename else 'jpg'
+            fname = f"{uuid.uuid4()}.{ext}"
+            path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+            f.save(path)
+            with open(path, 'rb') as fp:
+                img_data = base64.b64encode(fp.read()).decode()
+
+        elif request.is_json and 'image_b64' in request.json:
+            b64 = request.json['image_b64'].split(',')[-1]
+            img_bytes = base64.b64decode(b64)
+            fname = f"{uuid.uuid4()}.jpg"
+            path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+            with open(path, 'wb') as fp:
+                fp.write(img_bytes)
+            img_data = b64
+        else:
+            return jsonify({'error': 'No image provided'}), 400
+
+        result = predict_image(path)
+
+        if searches_col is not None:
+            searches_col.insert_one({
+                'user_id': session['user_id'],
+                'user_email': session['user_email'],
+                'filename': fname,
+                'image_full': img_data,
+                'result': result,
+                'timestamp': datetime.datetime.utcnow()
+            })
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"❌ Predict error: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+# ── History ───────────────────────────────────────────────────────────────────
+@app.route('/api/history', methods=['GET'])
+def history():
+    if 'user_id' not in session:
+        return jsonify({'error': 'Not authenticated'}), 401
+    if searches_col is None:
+        return jsonify([])
+    docs = list(searches_col.find(
+        {'user_id': session['user_id']},
+        sort=[('timestamp', -1)],
+        limit=20
+    ))
+    for d in docs:
+        d['_id'] = str(d['_id'])
+        d['timestamp'] = d['timestamp'].isoformat()
+    return jsonify(docs)
+
+
+# ── Frontend ──────────────────────────────────────────────────────────────────
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve(path):
+    if path and os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    return send_from_directory(app.static_folder, 'index.html')
+
+
+if __name__ == '__main__':
+    print("🌿 Starting Patti AI server...")
+    load_model()
+    app.run(debug=True, port=5000, host='0.0.0.0')
