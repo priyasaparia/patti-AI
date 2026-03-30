@@ -65,7 +65,7 @@ try:
     print("📥 Downloading model from HuggingFace...")
     model_path = hf_hub_download(
         repo_id="priyanshisaparia/Pattiai",
-        filename="patti_ai_model.keras",
+        filename="plant_disease_resnet50.keras",
         token=os.environ.get('HUGGINGFACE_HUB_TOKEN')
     )
     print(f"✅ Model downloaded to: {model_path}")
