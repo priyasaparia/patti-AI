@@ -1,8 +1,11 @@
 flask
 flask-cors
+flask-session
 pymongo
 werkzeug
 Pillow
 numpy
-opencv-python
-tensorflow
+keras
+jax
+huggingface_hub
+requests

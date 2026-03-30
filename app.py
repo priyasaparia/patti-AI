@@ -1,12 +1,18 @@
+import os
+os.environ["KERAS_BACKEND"] = "jax"
+
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 from datetime import timedelta
-import os, uuid, base64, datetime, json
+import uuid, base64, datetime, json
 import numpy as np
-from flask_session import Session
+import threading
+import requests
+import time
+import keras
 
 from PIL import Image
 
@@ -28,8 +34,9 @@ CORS(app,
      methods=["GET", "POST", "OPTIONS"])
 
 # ── MongoDB ───────────────────────────────────────────────────────────────────
+MONGO_URI = os.environ.get('MONGO_URI', 'mongodb://localhost:27017/')
 try:
-    client = MongoClient('mongodb://localhost:27017/', serverSelectionTimeoutMS=3000)
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
     client.server_info()
     db = client['patti_ai']
     users_col = db['users']
@@ -47,65 +54,35 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# ── Model ─────────────────────────────────────────────────────────────────────
-model = None
+# ── Model (singleton — loaded once globally from Hugging Face) ────────────────
+print("⏳ Loading model from Hugging Face...")
+try:
+    model = keras.saving.load_model("hf://priyanshisaparia/Pattiai")
+    print("✅ Model loaded from Hugging Face!")
+except Exception as e:
+    print(f"⚠️  Model load failed: {e}")
+    model = None
+
 class_names = {}
-
-def load_model():
-    global model, class_names
-    if model is not None:
-        return
-    try:
-        import tensorflow as tf
-
-        # Auto-detect model file
-        possible = [
-            'plant_disease_efficientnetv2s.keras',
-            'plant_disease_resnet50.keras',
-            'plant_disease_resnet5.keras',
-        ]
-        # Also scan folder
-        for f in os.listdir('.'):
-            if f.endswith('.keras') and f not in possible:
-                possible.append(f)
-
-        MODEL_PATH = None
-        for p in possible:
-            if os.path.exists(p):
-                MODEL_PATH = p
-                break
-
-        if not MODEL_PATH:
-            print(f"⚠️  No .keras model file found in folder!")
-            return
-
-        CLASS_PATH = 'class_indices.json'
-        if not os.path.exists(CLASS_PATH):
-            print(f"⚠️  class_indices.json not found!")
-            return
-
-        print(f"⏳ Loading model: {MODEL_PATH} ...")
-        model = tf.keras.models.load_model(MODEL_PATH)
-        print(f"✅ Model loaded → {MODEL_PATH}")
-
-        with open(CLASS_PATH) as f:
-            class_to_idx = json.load(f)
-        class_names = {v: k for k, v in class_to_idx.items()}
-        print(f"✅ Classes loaded → {len(class_names)} classes")
-
-    except Exception as e:
-        print(f"⚠️  Model load failed: {e}")
+CLASS_PATH = 'class_indices.json'
+if os.path.exists(CLASS_PATH):
+    with open(CLASS_PATH) as f:
+        class_to_idx = json.load(f)
+    class_names = {v: k for k, v in class_to_idx.items()}
+    print(f"✅ Classes loaded → {len(class_names)} classes")
+else:
+    print(f"⚠️  class_indices.json not found!")
 
 
 def predict_image(img_path):
-    load_model()
     if model is None:
         return {"disease": "Model not loaded", "confidence": 0, "healthy": False}
     try:
         img = Image.open(img_path).convert('RGB').resize((224, 224))
         arr = np.array(img, dtype=np.float32) / 255.0
         arr = np.expand_dims(arr, 0)
-        preds = model.predict(arr, verbose=0)[0]
+        preds = model(arr)
+        preds = np.array(preds)[0]
         idx = int(np.argmax(preds))
         conf = float(preds[idx])
         label = class_names.get(idx, f"Class_{idx}")
@@ -240,6 +217,28 @@ def history():
     return jsonify(docs)
 
 
+# ── Health check ─────────────────────────────────────────────────────────────
+@app.route('/health')
+def health():
+    return 'OK', 200
+
+
+# ── Keep Alive (Render free tier fix) ────────────────────────────────────────
+def keep_alive():
+    url = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:10000') + '/health'
+    while True:
+        time.sleep(600)  # ping every 10 minutes
+        try:
+            requests.get(url)
+            print("Keep-alive ping sent.")
+        except Exception as e:
+            print(f"Keep-alive failed: {e}")
+
+thread = threading.Thread(target=keep_alive)
+thread.daemon = True
+thread.start()
+
+
 # ── Frontend ──────────────────────────────────────────────────────────────────
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -251,5 +250,5 @@ def serve(path):
 
 if __name__ == '__main__':
     print("🌿 Starting Patti AI server...")
-    load_model()
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
