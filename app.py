@@ -54,31 +54,45 @@ UPLOAD_FOLDER = 'uploads'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# ── Model (singleton — loaded once globally from Hugging Face) ────────────────
-print("⏳ Loading model from Hugging Face...")
+# ── Model (loaded in background thread to avoid blocking startup) ─────────────
 model = None
-try:
-    from huggingface_hub import hf_hub_download, HfApi
-    import keras
+model_loading_error = None
+model_loading_status = "initializing"
 
-    # Download model from HuggingFace
-    print("📥 Downloading model from HuggingFace...")
-    model_path = hf_hub_download(
-        repo_id="priyanshisaparia/Pattiai",
-        filename="plant_disease_resnet50.keras",
-        token=os.environ.get('HUGGINGFACE_HUB_TOKEN')
-    )
-    print(f"✅ Model downloaded to: {model_path}")
+def load_model_background():
+    global model, model_loading_error, model_loading_status
+    try:
+        model_loading_status = "downloading"
+        print("⏳ Loading model from Hugging Face...")
+        from huggingface_hub import hf_hub_download
+        import keras
 
-    # Load the model
-    print("🔄 Loading model into memory...")
-    model = keras.saving.load_model(model_path)
-    print("✅ Model loaded successfully!")
-except Exception as e:
-    print(f"⚠️  Model load failed: {e}")
-    import traceback
-    traceback.print_exc()
-    model = None
+        print("📥 Downloading model from HuggingFace...")
+        model_path = hf_hub_download(
+            repo_id="priyanshisaparia/Pattiai",
+            filename="plant_disease_resnet50.keras",
+            token=os.environ.get('HUGGINGFACE_HUB_TOKEN'),
+            local_files_only=False
+        )
+        print(f"✅ Model downloaded to: {model_path}")
+
+        print("🔄 Loading model into memory...")
+        model_loading_status = "loading"
+        model = keras.saving.load_model(model_path)
+        model_loading_status = "ready"
+        print("✅ Model loaded successfully!")
+    except Exception as e:
+        model_loading_error = str(e)
+        model_loading_status = "failed"
+        print(f"⚠️ Model load failed: {e}")
+        import traceback
+        traceback.print_exc()
+        model = None
+
+# Start model loading in background thread
+model_thread = threading.Thread(target=load_model_background)
+model_thread.daemon = True
+model_thread.start()
 
 class_names = {}
 CLASS_PATH = 'class_indices.json'
@@ -170,6 +184,11 @@ def predict():
     print(f"🔍 /api/predict | session: {dict(session)}")
     if 'user_id' not in session:
         return jsonify({'error': 'Not authenticated'}), 401
+    
+    if model is None:
+        if model_loading_status == "loading" or model_loading_status == "downloading":
+            return jsonify({'error': 'Model is still loading, please try again in a moment'}), 503
+        return jsonify({'error': 'Model not loaded', 'details': model_loading_error}), 503
 
     try:
         img_data = None
@@ -237,7 +256,11 @@ def history():
 # ── Health check ─────────────────────────────────────────────────────────────
 @app.route('/health')
 def health():
-    return 'OK', 200
+    if model is None:
+        if model_loading_status == "failed":
+            return jsonify({"status": "error", "model": "failed", "error": model_loading_error}), 503
+        return jsonify({"status": "ok", "model": "loading", "progress": model_loading_status}), 200
+    return jsonify({"status": "ok", "model": "ready"}), 200
 
 
 # ── Keep Alive (Render free tier fix) ────────────────────────────────────────
