@@ -56,11 +56,28 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
 # ── Model (singleton — loaded once globally from Hugging Face) ────────────────
 print("⏳ Loading model from Hugging Face...")
+model = None
 try:
-    model = keras.saving.load_model("hf://priyanshisaparia/Pattiai")
-    print("✅ Model loaded from Hugging Face!")
+    from huggingface_hub import hf_hub_download, HfApi
+    import keras
+
+    # Download model from HuggingFace
+    print("📥 Downloading model from HuggingFace...")
+    model_path = hf_hub_download(
+        repo_id="priyanshisaparia/Pattiai",
+        filename="patti_ai_model.keras",
+        token=os.environ.get('HUGGINGFACE_HUB_TOKEN')
+    )
+    print(f"✅ Model downloaded to: {model_path}")
+
+    # Load the model
+    print("🔄 Loading model into memory...")
+    model = keras.saving.load_model(model_path)
+    print("✅ Model loaded successfully!")
 except Exception as e:
     print(f"⚠️  Model load failed: {e}")
+    import traceback
+    traceback.print_exc()
     model = None
 
 class_names = {}
